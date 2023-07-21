@@ -14,7 +14,7 @@
 #include "ESP32_SMA.h"
 
 #include "time.h"
-#include "bluetooth.h"
+#include "SmaBluetooth.h"
 #include "LocalUtil.h"
 #include "mainstate.h"
 
@@ -32,7 +32,7 @@
 #include "ESP32_SMA_Inverter.h"
 
 
-using namespace esp32m;
+//using namespace esp32m;
 
 
 #ifdef SLEEP_ROUTINE
@@ -118,12 +118,11 @@ void ESP32_SMA::setup()
 
   // Get the MAC address in reverse order (not sure why, but do it here to make setup easier)
   unsigned char smaSetAddress[6] = {SMA_ADDRESS};
-  for (int i = 0; i < 6; i++)
-    smaBTInverterAddressArray[i] = smaSetAddress[5 - i];
+  smaInverter.setInverterAddress(smaSetAddress);
 
   pinMode(LED_BUILTIN, OUTPUT);
 
-  ESP32rtc.setTime(30, 24, 15, 17, 1, 2021); // 17th Jan 2021 15:24:30  // Need this to be accurate. Since connecting to the internet anyway, use NTP.
+  ESP32rtc.setTime(30, 24, 15, 21, 7, 2023); // 17th Jan 2021 15:24:30  // Need this to be accurate. Since connecting to the internet anyway, use NTP.
 
   mqttclient.setMaxPacketSize(512); // must be big enough to send home assistant config
   mqttclient.enableMQTTPersistence();
@@ -157,6 +156,8 @@ void ESP32_SMA::every5Minutes()
   {
     mqttclient.publish(MQTT_BASE_TOPIC "signal", String(WiFi.RSSI()));
   }
+
+  //printLocalTime();
 }
 
 void ESP32_SMA::everyHour()
@@ -229,7 +230,7 @@ void ESP32_SMA::loop()
 
     
     // Check we are connected to BT, if not, restart process
-    if (!BTCheckConnected())
+    if (!smaInverter.isConnected())
     {
       mainstate = MAINSTATE_INIT;
     }
@@ -258,7 +259,7 @@ void ESP32_SMA::loop()
   switch (mainstate)
   {
   case MAINSTATE_INIT:
-    if (BTStart())
+    if (smaInverter.start())
     {
       mainstate++;
       smaInverter.resetInnerstate();
@@ -287,11 +288,8 @@ void ESP32_SMA::loop()
 
   case MAINSTATE_GET_DAILY_YIELD_3 : //3
     // Doing this to set datetime
-    if (smaInverter.getDailyYield())
-    {
-      mainstate++;
-      smaInverter.resetInnerstate();
-    }
+    mainstate++;
+    smaInverter.resetInnerstate();
     break;
 
   case MAINSTATE_CHECK_SET_INVERTER_TIME: // 4:
@@ -321,15 +319,13 @@ void ESP32_SMA::loop()
     break;
 
   case MAINSTATE_GET_DAILY_YIELD_7:// 7:
-    if (smaInverter.getDailyYield())
-    {
-      mainstate++;
-      smaInverter.resetInnerstate();
-    }
+    // Doing this to set datetime
+    mainstate++;
+    smaInverter.resetInnerstate();
     break;
 
   case MAINSTATE_TOTAL_POWER_GENERATION: //8:
-    if (smaInverter.getTotalPowerGeneration())
+    if (smaInverter.getPowerGeneration())
     {
       mainstate++;
       smaInverter.resetInnerstate();
@@ -421,3 +417,33 @@ void ESP32_SMA::loop()
 
   } // end of while(1)
 } // end of loop()
+
+
+
+/*
+  %a Abbreviated weekday name 
+  %A Full weekday name 
+  %b Abbreviated month name 
+  %B Full month name 
+  %c Date and time representation for your locale 
+  %d Day of month as a decimal number (01-31) 
+  %H Hour in 24-hour format (00-23) 
+  %I Hour in 12-hour format (01-12) 
+  %j Day of year as decimal number (001-366) 
+  %m Month as decimal number (01-12) 
+  %M Minute as decimal number (00-59) 
+  %p Current locale’s A.M./P.M. indicator for 12-hour clock 
+  %S Second as decimal number (00-59) 
+  %U Week of year as decimal number,  Sunday as first day of week (00-51) 
+  %w Weekday as decimal number (0-6; Sunday is 0) 
+  %W Week of year as decimal number, Monday as first day of week (00-51) 
+  %x Date representation for current locale 
+  %X Time representation for current locale 
+  %y Year without century, as decimal number (00-99) 
+  %Y Year with century, as decimal number 
+  %z %Z Time-zone name or abbreviation, (no characters if time zone is unknown) 
+  %% Percent sign 
+  You can include text literals (such as spaces and colons) to make a neater display or for padding between adjoining columns. 
+  You can suppress the display of leading zeroes  by using the "#" character  (%#d, %#H, %#I, %#j, %#m, %#M, %#S, %#U, %#w, %#W, %#y, %#Y) 
+*/
+

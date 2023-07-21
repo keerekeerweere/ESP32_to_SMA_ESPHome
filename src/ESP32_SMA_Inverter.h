@@ -1,8 +1,10 @@
-#pragma once
+#ifndef ESP32_SMA_INVERTER_H
+#define ESP32_SMA_INVERTER_H
+
 
 
 #include "Arduino.h"
-#include "bluetooth.h"
+#include "SmaBluetooth.h"
 #include "SMANetArduino.h"
 #include "LocalUtil.h"
 #include "mainstate.h"
@@ -14,12 +16,21 @@
 #include "site_details.h"
 
 
-using namespace esp32m;
+//using namespace esp32m;
 
 //missing builtin led 
 #ifndef LED_BUILTIN
 #define LED_BUILTIN 2
 #endif
+
+
+//User Group
+#define UG_USER         0x07L
+#define UG_INSTALLER    0x0AL
+
+//Wellknown SUSyID's
+#define SID_MULTIGATE   175
+#define SID_SB240       244
 
 
 //SMA inverter timezone (note inverter appears ignores summer time saving internally)
@@ -67,10 +78,6 @@ using namespace esp32m;
 
 //const unsigned char SMAInverterPasscode[] = {SMA_INVERTER_USER_PASSCODE};
 
-
-
-
-
 class ESP32_SMA_Inverter : public ESP32Loggable {
 
     public:
@@ -93,19 +100,26 @@ class ESP32_SMA_Inverter : public ESP32Loggable {
 
         bool initialiseSMAConnection();
         bool logonSMAInverter();
-        bool getDailyYield();
+        bool logoffSMAInverter();
         bool getInstantACPower();
         bool getInstantDCPower();
-        bool getTotalPowerGeneration();
+        bool getPowerGeneration();
         bool checkIfNeedToSetInverterTime();
         void setInverterTime();
+        void setInverterAddress(unsigned char* inverterAddress);
 
         void resetInnerstate() { innerstate = 0; };
 
+        bool start();
+        bool isConnected();
+
     protected:
         EspMQTTClient& _client;
+        ESP32_SMANetArduino smanet;
+
 
     private:
+
         prog_uchar PROGMEM smanet2packetx80x00x02x00[4];
         prog_uchar PROGMEM smanet2packet2[9];
         prog_uchar PROGMEM smanet2packet6[9];
@@ -140,6 +154,7 @@ class ESP32_SMA_Inverter : public ESP32Loggable {
         //Password needs to be 12 bytes long, with zeros as trailing bytes (Assume SMA INVERTER PIN code is 0000)
         unsigned char SMAInverterPasscode[12];
 
+
         //function call innerstate variable
         uint8_t innerstate = 0;
 
@@ -158,5 +173,14 @@ class ESP32_SMA_Inverter : public ESP32Loggable {
         float spotvoltdc=0;
         float spotampdc=0;
 
+        const unsigned short anySUSyID = 0xFFFF;
+        const unsigned long anySerial = 0xFFFFFFFF;
+
+        unsigned short devSUSyID;
+        unsigned long devSerial;
+
+    friend class ESP32_SMANetArduino;
+
 };
 
+#endif

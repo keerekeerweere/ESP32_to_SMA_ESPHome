@@ -5,57 +5,13 @@
 #include "Arduino.h"
 #include <logging.hpp>
 #include "SMANetArduino.h"
-#include "bluetooth.h"
+#include "SmaBluetooth.h"
 #include "Utils_SMA.h"
+
+
 using namespace esp32m;
 
-unsigned int packetlength = 0;
-unsigned int cmdcode = 0;
-
-//Should be moved into PROGMEM
-unsigned char sixzeros[6] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-//Should be moved into PROGMEM
-unsigned char sixff[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
-
-unsigned int packetposition = 0;
-
-unsigned int FCSChecksum = 0xffff;
-
-unsigned char Level1SrcAdd[6];
-unsigned char Level1DestAdd[6];
-
-//char invertername[15]={0};
-unsigned char packet_send_counter = 0;
-unsigned char lastpacketindex = 0;
-
-unsigned char level1packet[maxlevel1packetsize];
-
-bool escapenextbyte = false;
-
-PROGMEM prog_uint16_t fcstab[256] = {
-    0x0000, 0x1189, 0x2312, 0x329b, 0x4624, 0x57ad, 0x6536, 0x74bf, 0x8c48, 0x9dc1, 0xaf5a, 0xbed3, 0xca6c, 0xdbe5, 0xe97e, 0xf8f7, 0x1081, 0x0108, 0x3393, 0x221a, 0x56a5, 0x472c, 0x75b7, 0x643e, 0x9cc9, 0x8d40, 0xbfdb, 0xae52, 0xdaed, 0xcb64, 0xf9ff, 0xe876,
-    0x2102, 0x308b, 0x0210, 0x1399, 0x6726, 0x76af, 0x4434, 0x55bd, 0xad4a, 0xbcc3, 0x8e58, 0x9fd1, 0xeb6e, 0xfae7, 0xc87c, 0xd9f5, 0x3183, 0x200a, 0x1291, 0x0318, 0x77a7, 0x662e, 0x54b5, 0x453c, 0xbdcb, 0xac42, 0x9ed9, 0x8f50, 0xfbef, 0xea66, 0xd8fd, 0xc974,
-    0x4204, 0x538d, 0x6116, 0x709f, 0x0420, 0x15a9, 0x2732, 0x36bb, 0xce4c, 0xdfc5, 0xed5e, 0xfcd7, 0x8868, 0x99e1, 0xab7a, 0xbaf3, 0x5285, 0x430c, 0x7197, 0x601e, 0x14a1, 0x0528, 0x37b3, 0x263a, 0xdecd, 0xcf44, 0xfddf, 0xec56, 0x98e9, 0x8960, 0xbbfb, 0xaa72,
-    0x6306, 0x728f, 0x4014, 0x519d, 0x2522, 0x34ab, 0x0630, 0x17b9, 0xef4e, 0xfec7, 0xcc5c, 0xddd5, 0xa96a, 0xb8e3, 0x8a78, 0x9bf1, 0x7387, 0x620e, 0x5095, 0x411c, 0x35a3, 0x242a, 0x16b1, 0x0738, 0xffcf, 0xee46, 0xdcdd, 0xcd54, 0xb9eb, 0xa862, 0x9af9, 0x8b70,
-    0x8408, 0x9581, 0xa71a, 0xb693, 0xc22c, 0xd3a5, 0xe13e, 0xf0b7, 0x0840, 0x19c9, 0x2b52, 0x3adb, 0x4e64, 0x5fed, 0x6d76, 0x7cff, 0x9489, 0x8500, 0xb79b, 0xa612, 0xd2ad, 0xc324, 0xf1bf, 0xe036, 0x18c1, 0x0948, 0x3bd3, 0x2a5a, 0x5ee5, 0x4f6c, 0x7df7, 0x6c7e,
-    0xa50a, 0xb483, 0x8618, 0x9791, 0xe32e, 0xf2a7, 0xc03c, 0xd1b5, 0x2942, 0x38cb, 0x0a50, 0x1bd9, 0x6f66, 0x7eef, 0x4c74, 0x5dfd, 0xb58b, 0xa402, 0x9699, 0x8710, 0xf3af, 0xe226, 0xd0bd, 0xc134, 0x39c3, 0x284a, 0x1ad1, 0x0b58, 0x7fe7, 0x6e6e, 0x5cf5, 0x4d7c,
-    0xc60c, 0xd785, 0xe51e, 0xf497, 0x8028, 0x91a1, 0xa33a, 0xb2b3, 0x4a44, 0x5bcd, 0x6956, 0x78df, 0x0c60, 0x1de9, 0x2f72, 0x3efb, 0xd68d, 0xc704, 0xf59f, 0xe416, 0x90a9, 0x8120, 0xb3bb, 0xa232, 0x5ac5, 0x4b4c, 0x79d7, 0x685e, 0x1ce1, 0x0d68, 0x3ff3, 0x2e7a,
-    0xe70e, 0xf687, 0xc41c, 0xd595, 0xa12a, 0xb0a3, 0x8238, 0x93b1, 0x6b46, 0x7acf, 0x4854, 0x59dd, 0x2d62, 0x3ceb, 0x0e70, 0x1ff9, 0xf78f, 0xe606, 0xd49d, 0xc514, 0xb1ab, 0xa022, 0x92b9, 0x8330, 0x7bc7, 0x6a4e, 0x58d5, 0x495c, 0x3de3, 0x2c6a, 0x1ef1, 0x0f78};
-
-
-prog_uchar PROGMEM SMANET2header[] = {0xFF, 0x03, 0x60, 0x65};
-size_t sizeof_SMANET2header = sizeof(SMANET2header);
-
-prog_uchar PROGMEM InverterCodeArray[] = {0x5c, 0xaf, 0xf0, 0x1d, 0x50, 0x00}; // Fake address on the SMA NETWORK
-size_t sizeof_InverterCodeArray = sizeof(InverterCodeArray);
-
-prog_uchar PROGMEM fourzeros[] = {0, 0, 0, 0};
-size_t sizeof_fourzeros = sizeof(fourzeros);
-
-
-
-
-unsigned int readLevel1PacketFromBluetoothStream(int index)
+unsigned int ESP32_SMANetArduino::readLevel1PacketFromBluetoothStream(int index)
 {
   unsigned int retcmdcode;
   bool errorCodePCS;
@@ -72,14 +28,14 @@ unsigned int readLevel1PacketFromBluetoothStream(int index)
   //level1packet={0};
 
   //Wait for a start packet byte
-  while (getByte() != '\x7e')
+  while (smaBluetooth.getByte() != '\x7e')
   {
     delay(1);
   }
 
-  byte len1 = getByte();
-  byte len2 = getByte();
-  byte packetchecksum = getByte();
+  byte len1 = smaBluetooth.getByte();
+  byte len2 = smaBluetooth.getByte();
+  byte packetchecksum = smaBluetooth.getByte();
 
   if ((0x7e ^ len1 ^ len2) == packetchecksum)
     errorCodePCS = false;
@@ -90,11 +46,11 @@ unsigned int readLevel1PacketFromBluetoothStream(int index)
   }
 
   for (int i = 0; i < 6; i++)
-    Level1SrcAdd[i] = getByte();
+    Level1SrcAdd[i] = smaBluetooth.getByte();
   for (int i = 0; i < 6; i++)
-    Level1DestAdd[i] = getByte();
+    Level1DestAdd[i] = smaBluetooth.getByte();
 
-  retcmdcode = getByte() + (getByte() * 256);
+  retcmdcode = smaBluetooth.getByte() + (smaBluetooth.getByte() * 256);
   packetlength = len1 + (len2 * 256);
   //Serial.println(" ");
   //Serial.print("packetlength = ");
@@ -133,7 +89,7 @@ unsigned int readLevel1PacketFromBluetoothStream(int index)
     //Serial.print( " index = " );
     //Serial.print( index );
     //Serial.print( " " );
-    level1packet[index] = getByte();
+    level1packet[index] = smaBluetooth.getByte();
 
     //Keep 1st byte raw unescaped 0x7e
     //if (i>0) {
@@ -176,14 +132,14 @@ unsigned int readLevel1PacketFromBluetoothStream(int index)
   }
 }
 //-----------------------------------------------------------
-void prepareToReceive()
+void ESP32_SMANetArduino::prepareToReceive()
 {
   FCSChecksum = 0xFFFF;
   packetposition = 0;
   escapenextbyte = false;
 }
 //------------------------------------------------------------
-bool containsLevel2Packet()
+bool ESP32_SMANetArduino::containsLevel2Packet()
 {
   //Serial.println(" ");
   //Serial.print("packetlength = ");
@@ -209,7 +165,7 @@ bool containsLevel2Packet()
 // false otherwise, at which point it should be called again
 
 unsigned int lastGetPacket = -1;
-bool getPacket(unsigned int cmdcodetowait)
+bool ESP32_SMANetArduino::getPacket(unsigned int cmdcodetowait)
 {
   if (lastGetPacket != cmdcodetowait)
   {
@@ -227,7 +183,7 @@ bool getPacket(unsigned int cmdcodetowait)
   return false;
 }
 
-void waitForPacket(unsigned int xxx)
+void ESP32_SMANetArduino::waitForPacket(unsigned int xxx)
 {
   // pass
 }
@@ -238,7 +194,7 @@ void waitForPacket(unsigned int xxx)
 // Level 2 messages (PPP messages) follow the Level 1 packet header part. Each Level 2 packet starts with
 //   7E FF 03 60 65.
 unsigned int lastMulticmdcode = -1;
-bool waitForMultiPacket(unsigned int cmdcodetowait)
+bool ESP32_SMANetArduino::waitForMultiPacket(unsigned int cmdcodetowait)
 {
 
   //prepareToReceive();
@@ -257,7 +213,13 @@ bool waitForMultiPacket(unsigned int cmdcodetowait)
   return false;
 }
 
-void writeSMANET2Long(unsigned char *btbuffer, unsigned long v)
+void ESP32_SMANetArduino::writeSMANET2Short(unsigned char *btbuffer, unsigned short v)
+{
+    writeSMANET2SingleByte(btbuffer,(unsigned char)((v >> 0) & 0xFF));
+    writeSMANET2SingleByte(btbuffer,(unsigned char)((v >> 8) & 0xFF));
+}
+
+void ESP32_SMANetArduino::writeSMANET2Long(unsigned char *btbuffer, unsigned long v)
 {
   writeSMANET2SingleByte(btbuffer, (unsigned char)((v >> 0) & 0XFF));
   writeSMANET2SingleByte(btbuffer, (unsigned char)((v >> 8) & 0XFF));
@@ -265,7 +227,7 @@ void writeSMANET2Long(unsigned char *btbuffer, unsigned long v)
   writeSMANET2SingleByte(btbuffer, (unsigned char)((v >> 24) & 0xFF));
 }
 
-void writeSMANET2uint(unsigned char *btbuffer, unsigned int v)
+void ESP32_SMANetArduino::writeSMANET2uint(unsigned char *btbuffer, unsigned int v)
 {
   writeSMANET2SingleByte(btbuffer, (unsigned char)((v >> 0) & 0XFF));
   writeSMANET2SingleByte(btbuffer, (unsigned char)((v >> 8) & 0XFF));
@@ -296,7 +258,8 @@ void displaySpotValues(int gap) {
 }
 */
 
-void writeSMANET2SingleByte(unsigned char *btbuffer, unsigned char v)
+
+void ESP32_SMANetArduino::writeSMANET2SingleByte(unsigned char *btbuffer, unsigned char v)
 {
   //Keep a rolling checksum over the payload
   FCSChecksum = (FCSChecksum >> 8) ^ pgm_read_word_near(&fcstab[(FCSChecksum ^ v) & 0xff]);
@@ -312,7 +275,7 @@ void writeSMANET2SingleByte(unsigned char *btbuffer, unsigned char v)
   }
 }
 
-void writeSMANET2Array(unsigned char *btbuffer, unsigned char bytes[], byte loopcount)
+void ESP32_SMANetArduino::writeSMANET2Array(unsigned char *btbuffer, unsigned char bytes[], byte loopcount)
 {
   //Escape the packet if needed....
   for (int i = 0; i < loopcount; i++)
@@ -321,7 +284,7 @@ void writeSMANET2Array(unsigned char *btbuffer, unsigned char bytes[], byte loop
   } //end for
 }
 
-void writeSMANET2ArrayFromProgmem(unsigned char *btbuffer, prog_uchar ProgMemArray[], byte loopcount)
+void ESP32_SMANetArduino::writeSMANET2ArrayFromProgmem(unsigned char *btbuffer, prog_uchar ProgMemArray[], byte loopcount)
 {
   //debugMsg("writeSMANET2ArrayFromProgmem=");
   //Serial.println(loopcount);
@@ -332,37 +295,56 @@ void writeSMANET2ArrayFromProgmem(unsigned char *btbuffer, prog_uchar ProgMemArr
   } //end for
 }
 
-void writeSMANET2PlusPacket(unsigned char *btbuffer, unsigned char ctrl1, unsigned char ctrl2, unsigned char packetcount, unsigned char a, unsigned char b, unsigned char c)
+/**
+ * smanet.level1packet, 0x09, 0xA1, smanet.packet_send_counter, 0, 0, 0
+ * 
+ * 
+ * uint8_t  RootDeviceAddress[6]= {0, 0, 0, 0, 0, 0};    //Hold byte array with BT address of primary inverter
+uint8_t  LocalBTAddress[6] = {0, 0, 0, 0, 0, 0};      //Hold byte array with BT address of local adapter
+uint8_t  addr_broadcast[6] = {0, 0, 0, 0, 0, 0};
+uint8_t  addr_unknown[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+const unsigned short AppSUSyID = 125;
+unsigned long  AppSerial;
+const unsigned short anySUSyID = 0xFFFF;
+const unsigned long anySerial = 0xFFFFFFFF;
+
+ * 
+*/
+void ESP32_SMANetArduino::writeSMANET2PlusPacket(unsigned char *btbuffer, unsigned char longwords, unsigned char ctrl, unsigned short ctrl2, unsigned short dstSUSyID, unsigned long dstSerial)
 {
 
   //This is the header for a SMANET2+ (no idea if this is the correct name!!) packet - 28 bytes in length
-  lastpacketindex = packetcount;
+  lastpacketindex = packet_send_counter;
 
   //Start packet
-  btbuffer[packetposition++] = 0x7e; //Not included in checksum
+  btbuffer[packetposition++] = 0x7e; //Not included in checksum //also on sbfspot buf[packetposition++] = 0x7E; 
 
   //Header bytes 0xFF036065
-  writeSMANET2ArrayFromProgmem(btbuffer, SMANET2header, 4);
+  //{0xFF, 0x03, 0x60, 0x65}
+  writeSMANET2ArrayFromProgmem(btbuffer, SMANET2header, 4); //sbfspot writes : 0x656003FF, esp32: {0xFF, 0x03, 0x60, 0x65} same (in reverse order)
 
-  writeSMANET2SingleByte(btbuffer, ctrl1);
-  writeSMANET2SingleByte(btbuffer, ctrl2);
+  // example ctrl chars 0x09, 0xA1
+  writeSMANET2SingleByte(btbuffer, longwords); //0x09 //sbspot writes single bytes (updates checksum)
+  writeSMANET2SingleByte(btbuffer, ctrl); // 
 
-  writeSMANET2Array(btbuffer, sixff, 6);
+  writeSMANET2Short(btbuffer, dstSUSyID); //
+  writeSMANET2Long(btbuffer, dstSerial); //equivalent of sixFF
 
-  writeSMANET2SingleByte(btbuffer, a); //ArchCd
-  writeSMANET2SingleByte(btbuffer, b); //Zero
+  writeSMANET2Short(btbuffer, ctrl2);
 
-  writeSMANET2ArrayFromProgmem(btbuffer, InverterCodeArray, 6);
+  writeSMANET2Short(btbuffer, AppSUSyID);
+  writeSMANET2Long(btbuffer, AppSerial);
 
-  writeSMANET2SingleByte(btbuffer, 0x00);
-  writeSMANET2SingleByte(btbuffer, c);
+  writeSMANET2Short(btbuffer, ctrl2);
 
-  writeSMANET2ArrayFromProgmem(btbuffer, fourzeros, 4);
+  writeSMANET2Short(btbuffer, 0);
+  writeSMANET2Short(btbuffer, 0);
 
-  writeSMANET2SingleByte(btbuffer, packetcount);
+  writeSMANET2Short(btbuffer, packet_send_counter | 0x8000);
+
 }
 
-void writeSMANET2PlusPacketTrailer(unsigned char *btbuffer)
+void ESP32_SMANetArduino::writeSMANET2PlusPacketTrailer(unsigned char *btbuffer)
 {
   FCSChecksum = FCSChecksum ^ 0xffff;
 
@@ -373,16 +355,27 @@ void writeSMANET2PlusPacketTrailer(unsigned char *btbuffer)
   //Serial.print("Send Checksum=");Serial.println(FCSChecksum,HEX);
 }
 
-void writePacketHeader(unsigned char *btbuffer)
+/*void ESP32_SMANetArduino::writePacketHeader(unsigned char *btbuffer)
 {
   writePacketHeader(btbuffer, 0x01, 0x00, smaBTInverterAddressArray);
 }
-void writePacketHeader(unsigned char *btbuffer, unsigned char *destaddress)
+*/
+
+void ESP32_SMANetArduino::writePacketHeader(unsigned char *btbuffer)
 {
-  writePacketHeader(btbuffer, 0x01, 0x00, destaddress);
+  writePacketHeader(btbuffer, 0x01, smaBluetooth.myBTAddress, smaBTInverterAddressArray);
 }
 
-void writePacketHeader(unsigned char *btbuffer, unsigned char cmd1, unsigned char cmd2, unsigned char *destaddress)
+void ESP32_SMANetArduino::writePacketHeader(unsigned char *btbuffer, const unsigned int control, unsigned char *destaddress) 
+{
+  writePacketHeader(btbuffer, control, smaBluetooth.myBTAddress, destaddress);
+}
+
+void ESP32_SMANetArduino::writePacketHeader(unsigned char *btbuffer, unsigned char *destaddress) {
+  writePacketHeader(btbuffer, 0x01, smaBluetooth.myBTAddress, destaddress);
+}
+
+void ESP32_SMANetArduino::writePacketHeader(unsigned char *btbuffer, const unsigned int control, unsigned char *myaddress, unsigned char *destaddress)
 {
 
   if (packet_send_counter > 75)
@@ -398,17 +391,13 @@ void writePacketHeader(unsigned char *btbuffer, unsigned char cmd1, unsigned cha
   btbuffer[packetposition++] = 0; //checksum
 
   for (int i = 0; i < 6; i++)
-  {
-    btbuffer[packetposition++] = myBTAddress[i];
-  }
-
+    btbuffer[packetposition++] = myaddress[i]; //was before //smaBluetooth.myBTAddress[i];    
+  
   for (int i = 0; i < 6; i++)
-  {
     btbuffer[packetposition++] = destaddress[i];
-  }
 
-  btbuffer[packetposition++] = cmd1; //cmd byte 1
-  btbuffer[packetposition++] = cmd2; //cmd byte 2
+  btbuffer[packetposition++] = (uint8_t)(control & 0xFF);//cmd1; //cmd byte 1
+  btbuffer[packetposition++] = (uint8_t)(control >> 8);//cmd2; //cmd byte 2
 
   //cmdcode=cmd1+(cmd2*256);
   cmdcode = 0xffff; //Just set to dummy value
@@ -416,7 +405,7 @@ void writePacketHeader(unsigned char *btbuffer, unsigned char cmd1, unsigned cha
   //packetposition should now = 18
 }
 
-void writePacketLength(unsigned char *btbuffer)
+void ESP32_SMANetArduino::writePacketLength(unsigned char *btbuffer)
 {
   //  unsigned char len1=;  //TODO: Need to populate both bytes for large packets over 256 bytes...
   //  unsigned char len2=0;  //Were only doing a single byte for now...
@@ -425,13 +414,13 @@ void writePacketLength(unsigned char *btbuffer)
   btbuffer[3] = btbuffer[0] ^ btbuffer[1] ^ btbuffer[2]; //checksum
 }
 
-void wrongPacket()
+void ESP32_SMANetArduino::wrongPacket()
 {
   Serial.println(F("*WRONG PACKET*"));
   error();
 }
 
-void dumpPacket(char letter)
+void ESP32_SMANetArduino::dumpPacket(char letter)
 {
   for (int i = 0; i < packetposition; i++)
   {
@@ -449,7 +438,7 @@ void dumpPacket(char letter)
   Serial.println("");
 }
 
-void debugPrintHexByte(unsigned char b)
+void ESP32_SMANetArduino::debugPrintHexByte(unsigned char b)
 {
   if (b < 16)
     Serial.print("0"); //leading zero if needed
@@ -457,7 +446,7 @@ void debugPrintHexByte(unsigned char b)
   Serial.print(" ");
 }
 //-------------------------------------------------------------------------
-bool validateChecksum()
+bool ESP32_SMANetArduino::validateChecksum()
 {
   //Checks the validity of a LEVEL2 type SMA packet
 
@@ -530,7 +519,7 @@ void InquireBlueToothSignalStrength() {
   Serial.println("%");
 }
 */
-String getMAC(unsigned char *addr) {
+String ESP32_SMANetArduino::getMAC(unsigned char *addr) {
   String macRet = String("00:00:00:00:00:00");
 
   macRet.clear();
@@ -547,7 +536,7 @@ String getMAC(unsigned char *addr) {
   return macRet;
 }
 
-bool ValidateSenderAddress()
+bool ESP32_SMANetArduino::ValidateSenderAddress()
 {
   // Compares the SMA inverter address to the "from" address contained in the message.
   // Debug prints "P wrng dest" if there is no match.
@@ -563,7 +552,7 @@ bool ValidateSenderAddress()
   return ret;
 }
 
-bool IsPacketForMe()
+bool ESP32_SMANetArduino::IsPacketForMe()
 {
   // Compares the ESP32 address to the received "to" address in the message.
   // Debug prints "P wrng snder" if it does not match.
@@ -574,15 +563,44 @@ bool IsPacketForMe()
   // printMAC(Level1DestAdd);
   // debugMsgLn("");
 
-  return (ValidateDestAddress(sixzeros) || ValidateDestAddress(myBTAddress) || ValidateDestAddress(sixff));
+  //return (ValidateDestAddress(sixzeros) || ValidateDestAddress(smaBluetooth.myBTAddress) || ValidateDestAddress(sixff));
+  return ValidateDestAddress(smaBluetooth.myBTAddress);
 }
 
-bool ValidateDestAddress(unsigned char *address)
+bool ESP32_SMANetArduino::ValidateDestAddress(unsigned char *address)
 {
-  return (Level1DestAdd[0] == address[0] &&
-          Level1DestAdd[1] == address[1] &&
-          Level1DestAdd[2] == address[2] &&
-          Level1DestAdd[3] == address[3] &&
-          Level1DestAdd[4] == address[4] &&
-          Level1DestAdd[5] == address[5]);
+  for (int i=0; i<6;i++) 
+    if ( (Level1DestAdd[i]!= address[i]) && (Level1DestAdd[i]!= 0x00) && (Level1DestAdd[i]!= 0xFF) )
+      return false;
+
+  return true;
 }
+
+
+void ESP32_SMANetArduino::sendPacket(unsigned char *btbuffer) {
+  smaBluetooth.sendPacket(btbuffer, packetposition);
+}
+
+
+unsigned char* ESP32_SMANetArduino::getsmaBTInverterAddressArray() {
+  return smaBTInverterAddressArray;
+}
+
+
+
+bool ESP32_SMANetArduino::start(){
+  return smaBluetooth.BTStart();
+} //passthrough
+
+bool ESP32_SMANetArduino::isConnected(){
+  return smaBluetooth.BTCheckConnected();
+} //passthrough
+
+
+// Generate a unique session ID for application
+unsigned long ESP32_SMANetArduino::genSessionID()
+{
+    srand(time(nullptr));
+    return 900000000 + ((rand() << 16) + rand()) % 100000000;
+}
+

@@ -30,6 +30,16 @@ String LocalUtil::uint64ToString(uint64_t input, uint8_t base) {
   return result;
 }
 
+short LocalUtil::get_short(unsigned char *buf)
+{
+    register short shrt = 0;
+
+    shrt += *(buf+1);
+    shrt <<= 8;
+    shrt += *(buf);
+
+    return shrt;
+}
 
 int32_t LocalUtil::get_long(unsigned char *buf) {
   int32_t lng = 0;
@@ -39,4 +49,28 @@ int32_t LocalUtil::get_long(unsigned char *buf) {
   if ((lng == (int32_t)NaN_S32) || (lng == (int32_t)NaN_U32))
     lng = 0;
   return lng;
+}
+
+
+int64_t LocalUtil::get_longlong(unsigned char *buf)
+{
+    register int64_t lnglng = 0;
+
+    lnglng += *(buf+7);
+    lnglng <<= 8;
+    lnglng += *(buf+6);
+    lnglng <<= 8;
+    lnglng += *(buf+5);
+    lnglng <<= 8;
+    lnglng += *(buf+4);
+    lnglng <<= 8;
+    lnglng += *(buf+3);
+    lnglng <<= 8;
+    lnglng += *(buf+2);
+    lnglng <<= 8;
+    lnglng += *(buf+1);
+    lnglng <<= 8;
+    lnglng += *(buf);
+
+    return lnglng;
 }

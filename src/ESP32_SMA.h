@@ -10,7 +10,6 @@
 
 #include "site_details.h"
 #include "ESP32_SMA_Inverter.h"
-
 #include "ESP32Loggable.h"
 
 //missing builtin led 
@@ -35,11 +34,9 @@
 #undef allowsleep
 //#define allowsleep
 
-
-
 class ESP32_SMA : public ESP32Loggable {
     public:
-         ESP32_SMA() : ESP32Loggable("ESP32_SMA") {}
+        ESP32_SMA() : ESP32Loggable("ESP32_SMA") {}
 
         void onConnectionEstablished();
         void setup();
@@ -54,6 +51,7 @@ class ESP32_SMA : public ESP32Loggable {
 // Function Prototypes
         void blinkLed();
         void blinkLedOff();
+        //void printLocalTime();
 
     private:
         bool blinklaststate;
@@ -65,6 +63,7 @@ class ESP32_SMA : public ESP32Loggable {
             MQTT_USER, // Can be omitted if not needed
             MQTT_PASS, // Can be omitted if not needed
             HOST);
+
 
         ESP32_SMA_Inverter smaInverter = ESP32_SMA_Inverter(mqttclient);
 

@@ -1,14 +1,19 @@
 #include "ESP32_SMA_Inverter.h"
 
-#include "bluetooth.h"
-#include "SMANetArduino.h"
-#include "LocalUtil.h"
-#include "mainstate.h"
 
 #include <ets-appender.hpp>
 #include <udp-appender.hpp>
 
 #include "site_details.h"
+
+
+
+void ESP32_SMA_Inverter::setInverterAddress(unsigned char* inverterAddress) {
+  for (int i = 0; i < 6; i++)
+    smanet.smaBTInverterAddressArray[i] = inverterAddress[5 - i];
+
+}
+
 
 bool ESP32_SMA_Inverter::initialiseSMAConnection()
 {
@@ -20,90 +25,99 @@ bool ESP32_SMA_Inverter::initialiseSMAConnection()
   {
   case 0:
     //Wait for announcement/broadcast message from PV inverter
-    if (getPacket(0x0002))
+    if (smanet.getPacket(0x0002))
       innerstate++;
     break;
 
   case 1:
     //Extract data from the 0002 packet
-    netid = level1packet[4];
+    netid = smanet.level1packet[4];
 
     // Now create a response and send it.
-    for (int i = 0; i < sizeof(level1packet); i++)
-      level1packet[i] = 0x00;
+    for (int i = 0; i < sizeof(smanet.level1packet); i++)
+      smanet.level1packet[i] = 0x00;
 
-    writePacketHeader(level1packet, 0x02, 0x00, smaBTInverterAddressArray);
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packet99, sizeof_smanet2packet99 );
-    writeSMANET2SingleByte(level1packet, netid);
-    writeSMANET2ArrayFromProgmem(level1packet, fourzeros, sizeof_fourzeros );
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packet0x01000000, sizeof(smanet2packet0x01000000));
-    writePacketLength(level1packet);
-    sendPacket(level1packet);
+    smanet.writePacketHeader(smanet.level1packet, 0x02, smanet.smaBTInverterAddressArray);
+    smanet.writeSMANET2Long(smanet.level1packet, 0x00700400); //writeLong(pcktBuf, 0x00700400); // smanet.writeSMANET2ArrayFromProgmem(smanet.level1packet, smanet2packet99, sizeof_smanet2packet99 );
+    smanet.writeSMANET2SingleByte(smanet.level1packet, netid); //writeByte(pcktBuf, invData->NetID);
+    smanet.writeSMANET2Long(smanet.level1packet, 0); //writeLong(pcktBuf, 0); //smanet.writeSMANET2ArrayFromProgmem(smanet.level1packet, fourzeros, sizeof_fourzeros ); 
+    smanet.writeSMANET2Long(smanet.level1packet, 1); //writeLong(pcktBuf, 1); //smanet.writeSMANET2ArrayFromProgmem(smanet.level1packet, smanet2packet0x01000000, sizeof(smanet2packet0x01000000));
+    smanet.writePacketLength(smanet.level1packet);
+    smanet.sendPacket(smanet.level1packet);
     innerstate++;
     break;
 
   case 2:
     // The SMA inverter will respond with a packet carrying the command '0x000A'.
     // It will return with cmdcode set to 0x000A.
-    if (getPacket(0x000a))
+    if (smanet.getPacket(0x000a))
       innerstate++;
     break;
 
   case 3:
     // The SMA inverter will now send two packets, one carrying the '0x000C' command, then the '0x0005' command.
     // Sit in the following loop until you get one of these two packets.
-    cmdcode = readLevel1PacketFromBluetoothStream(0);
-    if ((cmdcode == 0x000c) || (cmdcode == 0x0005))
+    smanet.cmdcode = smanet.readLevel1PacketFromBluetoothStream(0);
+    if ((smanet.cmdcode == 0x000c) || (smanet.cmdcode == 0x0005))
       innerstate++;
     break;
 
   case 4:
     // If the most recent packet was command code = 0x0005 skip this next line, otherwise, wait for 0x0005 packet.
     // Since the first SMA packet after a 0x000A packet will be a 0x000C packet, you'll probably sit here waiting at least once.
-    if (cmdcode == 0x0005)
+    if (smanet.cmdcode == 0x0005)
     {
       innerstate++;
     }
     else
     {
-      if (getPacket(0x0005))
+      if (smanet.getPacket(0x0005))
         innerstate++;
     }
     break;
 
   case 5:
     //First SMANET2 packet
-    writePacketHeader(level1packet, sixff);
-    writeSMANET2PlusPacket(level1packet, 0x09, 0xa0, packet_send_counter, 0, 0, 0);
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packetx80x00x02x00, sizeof_smanet2packetx80x00x02x00);
-    writeSMANET2SingleByte(level1packet, 0x00);
-    writeSMANET2ArrayFromProgmem(level1packet, fourzeros, sizeof_fourzeros);
-    writeSMANET2ArrayFromProgmem(level1packet, fourzeros, sizeof_fourzeros);
-    writeSMANET2PlusPacketTrailer(level1packet);
-    writePacketLength(level1packet);
-    sendPacket(level1packet);
+    smanet.writePacketHeader(smanet.level1packet, 0x01, smanet.address_unknown);
+    smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x09, 0xA0, 0, anySUSyID, anySerial);//smanet.level1packet, 0x09, 0xa0, smanet.packet_send_counter, 0, 0, 0);
 
-    if (getPacket(0x0001) && validateChecksum())
+    smanet.writeSMANET2Long(smanet.level1packet, 0x00000200);
+    smanet.writeSMANET2Long(smanet.level1packet, 0);
+    smanet.writeSMANET2Long(smanet.level1packet, 0);
+
+    smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet);
+    smanet.writePacketLength(smanet.level1packet);
+
+    smanet.sendPacket(smanet.level1packet);
+
+    if (smanet.getPacket(0x0001) && smanet.validateChecksum())
     {
       innerstate++;
-      packet_send_counter++;
+      smanet.packet_send_counter++;
     }
+
+    devSUSyID = LocalUtil::get_short(smanet.level1packet + 55); //get_short(pcktBuf + 55);
+    devSerial = LocalUtil::get_long(smanet.level1packet + 57); //Serial = get_long(pcktBuf + 57);
+    
+    logI("SUSyID: %d - SN: %lu\n", devSUSyID, devSerial);
+
     break;
 
   case 6:
     //Second SMANET2 packet
-    writePacketHeader(level1packet, sixff);
-    writeSMANET2PlusPacket(level1packet, 0x08, 0xa0, packet_send_counter, 0x00, 0x03, 0x03);
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packet2, sizeof_smanet2packet2);
+    logoffSMAInverter();
+/*    smanet.writePacketHeader(smanet.level1packet, smanet.sixff);
+    smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x08, 0xa0, smanet.packet_send_counter, 0x00, 0x03, 0x03);
+    smanet.writeSMANET2ArrayFromProgmem(smanet.level1packet, smanet2packet2, sizeof_smanet2packet2);
 
-    writeSMANET2PlusPacketTrailer(level1packet);
-    writePacketLength(level1packet);
-    sendPacket(level1packet);
-    packet_send_counter++;
+    smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet);
+    smanet.writePacketLength(smanet.level1packet);
+    smanet.sendPacket(smanet.level1packet);
+    smanet.packet_send_counter++;
 
     innerstate++;
     break;
-
+*/
   default:
     return true;
   }
@@ -112,40 +126,59 @@ bool ESP32_SMA_Inverter::initialiseSMAConnection()
 }
 
 
-
+/*
+uint8_t  RootDeviceAddress[6]= {0, 0, 0, 0, 0, 0};    //Hold byte array with BT address of primary inverter
+uint8_t  LocalBTAddress[6] = {0, 0, 0, 0, 0, 0};      //Hold byte array with BT address of local adapter
+uint8_t  addr_broadcast[6] = {0, 0, 0, 0, 0, 0};
+uint8_t  addr_unknown[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+const unsigned short AppSUSyID = 125;
+unsigned long  AppSerial;
+const unsigned short anySUSyID = 0xFFFF;
+const unsigned long anySerial = 0xFFFFFFFF;
+*/
 
 bool ESP32_SMA_Inverter::logonSMAInverter()
 {
   logD("logonSMAInverter(%i)" , innerstate);
+  time_t now;
 
   //Third SMANET2 packet
   switch (innerstate)
   {
   case 0:
-    writePacketHeader(level1packet, sixff);
-    writeSMANET2PlusPacket(level1packet, 0x0e, 0xa0, packet_send_counter, 0x00, 0x01, 0x01);
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packet_logon, sizeof(smanet2packet_logon));
-    writeSMANET2ArrayFromProgmem(level1packet, fourzeros, sizeof_fourzeros);
+    smanet.writePacketHeader(smanet.level1packet, 0x01, smanet.address_unknown); // pass dest address unknown // writePacketHeader(pcktBuf, 0x01, addr_unknown);
+    //smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x0e, 0xa0, smanet.packet_send_counter, 0x00, 0x01, 0x01);
+    //smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x0e, 0xa0, 0x0100, smanet.packet_send_counter);
+    //0x0E, 0xA0, 0x0100
+    smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x0e, 0xa0, 0x0100, anySUSyID, anySerial); // writePacket(pcktBuf, 0x0E, 0xA0, 0x0100, anySUSyID, anySerial);
+
+    //was before smanet.writeSMANET2ArrayFromProgmem(smanet.level1packet, smanet2packet_logon, sizeof(smanet2packet_logon));    
+    smanet.writeSMANET2Long(smanet.level1packet, 0xFFFD040C); //writeLong(pcktBuf, 0xFFFD040C);
+    smanet.writeSMANET2Long(smanet.level1packet, UG_USER);    // User / Installer
+    smanet.writeSMANET2Long(smanet.level1packet, 0x00000384); // Timeout = 900sec ?
+    now = time(NULL);
+    smanet.writeSMANET2Long(smanet.level1packet, now);
+    smanet.writeSMANET2Long(smanet.level1packet, 0); //was before smanet.writeSMANET2ArrayFromProgmem(smanet.level1packet, fourzeros, sizeof_fourzeros);
 
     //INVERTER PASSWORD
     for (int passcodeloop = 0; passcodeloop < sizeof(SMAInverterPasscode); passcodeloop++)
     {
       unsigned char v = pgm_read_byte(SMAInverterPasscode + passcodeloop);
-      writeSMANET2SingleByte(level1packet, (v + 0x88) % 0xff);
+      smanet.writeSMANET2SingleByte(smanet.level1packet, (v + 0x88) % 0xff);
     }
 
-    writeSMANET2PlusPacketTrailer(level1packet);
-    writePacketLength(level1packet);
-    sendPacket(level1packet);
+    smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet);
+    smanet.writePacketLength(smanet.level1packet);
+    smanet.sendPacket(smanet.level1packet);
 
     innerstate++;
     break;
 
   case 1:
-    if (getPacket(0x0001) && validateChecksum())
+    if (smanet.getPacket(0x0001) && smanet.validateChecksum())
     {
       innerstate++;
-      packet_send_counter++;
+      smanet.packet_send_counter++;
     }
     break;
 
@@ -156,104 +189,40 @@ bool ESP32_SMA_Inverter::logonSMAInverter()
   return false;
 }
 
-
-
-bool ESP32_SMA_Inverter::getDailyYield()
+bool ESP32_SMA_Inverter::logoffSMAInverter()
 {
-  //We expect a multi packet reply to this question...
-  //We ask the inverter for its DAILY yield (generation)
-  //once this is returned we can extract the current date/time from the inverter and set our internal clock
-  logD("getDailyYield(%i)" , innerstate);
+  //Third SMANET2 packet
+    logD("logoffSMAInverter()");
 
-  switch (innerstate)
-  {
-  case 0:
-    writePacketHeader(level1packet);
-    //writePacketHeader(level1packet,0x01,0x00,smaBTInverterAddressArray);
-    writeSMANET2PlusPacket(level1packet, 0x09, 0xa0, packet_send_counter, 0, 0, 0);
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packetx80x00x02x00, sizeof(smanet2packetx80x00x02x00));
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packet6, sizeof(smanet2packet6));
-    writeSMANET2PlusPacketTrailer(level1packet);
-    writePacketLength(level1packet);
-
-    sendPacket(level1packet);
+    //pcktID++;
+    smanet.writePacketHeader(smanet.level1packet, 0x01, smanet.address_unknown);
+    smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x08, 0xA0, 0x0300, anySUSyID, anySerial);
+    smanet.writeSMANET2Long(smanet.level1packet, 0xFFFD010E);
+    smanet.writeSMANET2Long(smanet.level1packet, 0xFFFFFFFF);
+    smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet);
+    smanet.writePacketLength(smanet.level1packet);
+    smanet.sendPacket(smanet.level1packet);
 
     innerstate++;
-    break;
 
-  case 1:
-    if (getPacket(0x0001))
-    {
-      if (validateChecksum())
-      {
-        packet_send_counter++;
-        innerstate++;
-      }
-      else
-        innerstate = 0;
-    }
-    break;
-
-  case 2:
-    //Returns packet looking like this...
-    //    7E FF 03 60 65 0D 90 5C AF F0 1D 50 00 00 A0 83
-    //    00 1E 6C 5D 7E 00 00 00 00 00 00 03
-    //    80 01 02 00
-    //    54 01 00 00 00 01 00 00 00 01
-    //    22 26  //command code 0x2622 daily yield
-    //    00     //unknown
-    //    D6 A6 99 4F  //Unix time stamp (backwards!) = 1335469782 = Thu, 26 Apr 2012 19:49:42 GMT
-    //    D9 26 00     //Daily generation 9.945 kwh
-    //    00
-    //    00 00 00 00
-    //    18 61    //checksum
-    //    7E       //packet trailer
-
-    // Does this packet contain the British Summer time flag?
-    //dumpPacket('Y');
-
-    valuetype = level1packet[40 + 1 + 1] + level1packet[40 + 2 + 1] * 256;
-
-    //Serial.println(valuetype,HEX);
-    //Make sure this is the right message type
-    if (valuetype == 0x2622)
-    {
-      memcpy(&value64, &level1packet[40 + 8 + 1], 8);
-      //0x2622=Day Yield Wh
-      // memcpy(&datetime, &level1packet[40 + 4 + 1], 4);
-      datetime = LocalUtil::get_long(level1packet + 40 + 1 + 4);
-      // debugMsg("Current Time (epoch): ");
-      // debugMsgLn(String(datetime));
-
-      //setTime(datetime);
-      currentvalue = value64;
-      logI("Day Yield: %f" , (double)value64 / 1000);
-      _client.publish(MQTT_BASE_TOPIC "generation_today", LocalUtil::uint64ToString(currentvalue), true);
-
-
-      if (1==0) {
-        if (!_client.isConnected() ){
-            log_i("_client not connected here ");
-        } else {
-            log_i("_client is connected here ");
-        }
-      }
-
-    }
-    innerstate++;
-    break;
-
-  default:
     return true;
-  }
-
-  return false;
 }
 
-
+/**
+ case SpotACPower:
+        // SPOT_PAC1, SPOT_PAC2, SPOT_PAC3
+        command = 0x51000200;
+        first = 0x00464000;
+        last = 0x004642FF;
+        break; 
+*/
 bool ESP32_SMA_Inverter::getInstantACPower()
 {
   logD("getInstantACPower(%i)" , innerstate);
+
+  long command = 0x51000200;
+  long first = 0x00464000;
+  long last = 0x004642FF;
 
   int32_t thisvalue;
   //Get spot value for instant AC wattage
@@ -263,24 +232,29 @@ bool ESP32_SMA_Inverter::getInstantACPower()
   switch (innerstate)
   {
   case 0:
-    writePacketHeader(level1packet); //writePacketHeader(pcktBuf, 0x01, addr_unknown);
-    //writePacketHeader(level1packet,0x01,0x00,smaBTInverterAddressArray);
-    writeSMANET2PlusPacket(level1packet, 0x09, 0xA1, packet_send_counter, 0, 0, 0); // writePacket(pcktBuf, 0x09, 0xA0, 0, device->SUSyID, device->Serial);
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packetx80x00x02x00, sizeof(smanet2packetx80x00x02x00));
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2acspotvalues, sizeof(smanet2acspotvalues));
-    writeSMANET2PlusPacketTrailer(level1packet); //writePacketTrailer(pcktBuf);
-    writePacketLength(level1packet); //writePacketLength(pcktBuf);
+    //writePacketHeader(pcktBuf, 0x01, addr_unknown);
+    smanet.writePacketHeader(smanet.level1packet, smanet.smaBTInverterAddressArray); 
+   
+    // writePacket(pcktBuf, 0x09, 0xA0, 0, device->SUSyID, device->Serial);
+    smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x09, 0xA0, 0, devSUSyID, devSerial);     
 
-    sendPacket(level1packet);
+    smanet.writeSMANET2Long(smanet.level1packet, command);
+    smanet.writeSMANET2Long(smanet.level1packet, first);
+    smanet.writeSMANET2Long(smanet.level1packet, last);
+
+    smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet); //writePacketTrailer(pcktBuf);
+    smanet.writePacketLength(smanet.level1packet); //writePacketLength(pcktBuf);
+
+    smanet.sendPacket(smanet.level1packet);
     innerstate++;
     break;
 
   case 1:
-    if (waitForMultiPacket(0x0001))
+    if (smanet.waitForMultiPacket(0x0001))
     {
-      if (validateChecksum())
+      if (smanet.validateChecksum())
       {
-        packet_send_counter++;
+        smanet.packet_send_counter++;
         innerstate++;
       }
       else
@@ -291,55 +265,126 @@ bool ESP32_SMA_Inverter::getInstantACPower()
   case 2:
     //value will contain instant/spot AC power generation along with date/time of reading...
     // memcpy(&datetime, &level1packet[40 + 1 + 4], 4);
-    datetime = LocalUtil::get_long(level1packet + 40 + 1 + 4);
-    thisvalue = LocalUtil::get_long(level1packet + 40 + 1 + 8);
-    // memcpy(&thisvalue, &level1packet[40 + 1 + 8], 4);
-    
-    currentvalue = thisvalue;
-    logI("AC Pwr= %li " , thisvalue);
-    _client.publish(MQTT_BASE_TOPIC "instant_ac", LocalUtil::uint64ToString(currentvalue), true);
+    bool validPcktID = false;
 
-    spotpowerac = thisvalue;
+    short pcktcount = LocalUtil::get_short(smanet.level1packet + 25);
+    unsigned short rcvpcktID = LocalUtil::get_short(smanet.level1packet + 27) & 0x7FFF;
 
-    //displaySpotValues(28);
+    //was it my packet ? 
+    uint16_t aSYSyID = LocalUtil::get_short(smanet.level1packet + 15);
+    uint32_t aSerial = LocalUtil::get_long(smanet.level1packet+17);
+    if (((uint16_t) aSYSyID == devSUSyID) && ((uint32_t)aSerial == devSerial)) 
+    {
+        validPcktID = true;
+        int32_t value = 0;
+        int64_t value64 = 0;
+        uint32_t recordsize = 4 * ((uint32_t)smanet.level1packet[5] - 9) / ((uint32_t)LocalUtil::get_long(smanet.level1packet + 37) - (uint32_t)LocalUtil::get_long(smanet.level1packet + 33) + 1);
+        for (int ii = 41; ii < smanet.packetposition - 3; ii += recordsize) 
+        {
+          uint8_t *recptr = smanet.level1packet + ii;
+          uint32_t code = ((uint32_t)LocalUtil::get_long(recptr));
+          LriDef lri = (LriDef)(code & 0x00FFFF00);
+          uint32_t cls = code & 0xFF;
+          uint8_t dataType = code >> 24;
+          time_t datetime = (time_t)LocalUtil::get_long(recptr + 4);
+
+          if (recordsize == 16)
+          {
+              value64 = LocalUtil::get_longlong(recptr + 8);
+              if (is_NaN(value64) || is_NaN((uint64_t)value64))
+                  value64 = 0;
+          }
+          else if ((dataType != DT_STRING) && (dataType != DT_STATUS))
+          {
+              value = LocalUtil::get_long(recptr + 16);
+              if (is_NaN(value) || is_NaN((uint32_t)value))
+                  value = 0;
+          }
+
+          logD("received valuetype :%%.%dX ", lri);
+
+          switch (lri)
+          {
+          case GridMsWphsA: //SPOT_PACTOT
+              //This function gives us the time when the inverter was switched off
+              thisvalue = value;
+              logI("AC Pwr= %li " , thisvalue);
+
+              _client.publish(MQTT_BASE_TOPIC "instant_ac", LocalUtil::uint64ToString(currentvalue), true);
+
+              spotpowerac = thisvalue;
+
+              break;
+
+          case GridMsWphsB: //SPOT_PACTOT
+              //This function gives us the time when the inverter was switched off
+              thisvalue = value;
+              logI("AC Pwr= %li " , thisvalue);
+
+              _client.publish(MQTT_BASE_TOPIC "instant_ac", LocalUtil::uint64ToString(currentvalue), true);
+
+              spotpowerac = thisvalue;
+
+              break;
+          case GridMsWphsC: //SPOT_PACTOT
+              //This function gives us the time when the inverter was switched off
+              thisvalue = value;
+              logI("AC Pwr= %li " , thisvalue);
+
+              _client.publish(MQTT_BASE_TOPIC "instant_ac", LocalUtil::uint64ToString(currentvalue), true);
+
+              spotpowerac = thisvalue;
+
+              break;
+          default:
+             break;
+          }
+        }
+    }
+
     innerstate++;
     break;
 
-  default:
     return true;
   }
 
   return false;
 }
 
-bool ESP32_SMA_Inverter::getTotalPowerGeneration()
+bool ESP32_SMA_Inverter::getPowerGeneration()
 {
-
   //Gets the total kWh the SMA inverter has generated in its lifetime...
   // debugMsg("getTotalPowerGeneration stage: ");
   // debugMsgLn(String(innerstate));
   logD("getTotalPowerGeneration(%i)" , innerstate);
+        // SPOT_ETODAY, SPOT_ETOTAL
+        long command = 0x54000200;
+        long first = 0x00260100;
+        long last = 0x002622FF;
 
   switch (innerstate)
   {
   case 0:
-    writePacketHeader(level1packet);
-    writeSMANET2PlusPacket(level1packet, 0x09, 0xa0, packet_send_counter, 0, 0, 0);
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packetx80x00x02x00, sizeof(smanet2packetx80x00x02x00));
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2totalyieldWh, sizeof(smanet2totalyieldWh));
-    writeSMANET2PlusPacketTrailer(level1packet);
-    writePacketLength(level1packet);
+    smanet.writePacketHeader(smanet.level1packet);
+    //smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x09, 0xa0, smanet.packet_send_counter, 0, 0, 0);
+    smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x09, 0xA0, 0, devSUSyID, devSerial);
+    smanet.writeSMANET2Long(smanet.level1packet, command);
+    smanet.writeSMANET2Long(smanet.level1packet, first);
+    smanet.writeSMANET2Long(smanet.level1packet, last);
 
-    sendPacket(level1packet);
+    smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet);
+    smanet.writePacketLength(smanet.level1packet);
+
+    smanet.sendPacket(smanet.level1packet);
     innerstate++;
     break;
 
   case 1:
-    if (waitForMultiPacket(0x0001))
+    if (smanet.waitForMultiPacket(0x0001))
     {
-      if (validateChecksum())
+      if (smanet.validateChecksum())
       {
-        packet_send_counter++;
+        smanet.packet_send_counter++;
         innerstate++;
       }
       else
@@ -349,17 +394,69 @@ bool ESP32_SMA_Inverter::getTotalPowerGeneration()
 
   case 2:
     //displaySpotValues(16);
-    memcpy(&datetime, &level1packet[40 + 1 + 4], 4);
-    memcpy(&value64, &level1packet[40 + 1 + 8], 8);
-    //digitalClockDisplay(datetime);
-    currentvalue = value64;
-    logI("Total Power: %f ", (double)value64 / 1000);
-    //reportValue(MQTT_BASE_TOPIC "generation_total", LocalUtil::uint64ToString(currentvalue), true);
-    _client.publish(MQTT_BASE_TOPIC "generation_total", LocalUtil::uint64ToString(currentvalue), true);
+
+    bool validPcktID = false;
+
+    short pcktcount = LocalUtil::get_short(smanet.level1packet + 25);
+    unsigned short rcvpcktID = LocalUtil::get_short(smanet.level1packet + 27) & 0x7FFF;
+
+    //was it my packet ? 
+    uint16_t aSYSyID = LocalUtil::get_short(smanet.level1packet + 15);
+    uint32_t aSerial = LocalUtil::get_long(smanet.level1packet+17);
+    if (((uint16_t) aSYSyID == devSUSyID) && ((uint32_t)aSerial == devSerial)) 
+    {
+        validPcktID = true;
+        int32_t value = 0;
+        int64_t value64 = 0;
+        uint32_t recordsize = 4 * ((uint32_t)smanet.level1packet[5] - 9) / ((uint32_t)LocalUtil::get_long(smanet.level1packet + 37) - (uint32_t)LocalUtil::get_long(smanet.level1packet + 33) + 1);
+        for (int ii = 41; ii < smanet.packetposition - 3; ii += recordsize) 
+        {
+          uint8_t *recptr = smanet.level1packet + ii;
+          uint32_t code = ((uint32_t)LocalUtil::get_long(recptr));
+          LriDef lri = (LriDef)(code & 0x00FFFF00);
+          uint32_t cls = code & 0xFF;
+          uint8_t dataType = code >> 24;
+          time_t datetime = (time_t)LocalUtil::get_long(recptr + 4);
+
+          if (recordsize == 16)
+          {
+              value64 = LocalUtil::get_longlong(recptr + 8);
+              if (is_NaN(value64) || is_NaN((uint64_t)value64))
+                  value64 = 0;
+          }
+          else if ((dataType != DT_STRING) && (dataType != DT_STATUS))
+          {
+              value = LocalUtil::get_long(recptr + 16);
+              if (is_NaN(value) || is_NaN((uint32_t)value))
+                  value = 0;
+          }
+
+          logD("received valuetype :%%.%dX ", lri);
+
+          switch (lri)
+          {
+
+          case MeteringTotWhOut: //SPOT_ETOTAL
+              //In case SPOT_ETODAY missing, this function gives us inverter time (eg: SUNNY TRIPOWER 6.0)
+              logI("SPOT_ETOTAL= %f" , (double)value64 / 1000);
+              _client.publish(MQTT_BASE_TOPIC "generation_total", LocalUtil::uint64ToString(value64), true);
+              break;
+
+          case MeteringDyWhOut: //SPOT_ETODAY
+              //This function gives us the current inverter time
+              logI("SPOT_ETODAY= %f" , (double)value64 / 1000);
+              _client.publish(MQTT_BASE_TOPIC "generation_today", LocalUtil::uint64ToString(value64), true);
+              break;
+
+          default:
+             break;
+          }
+        }
+    }
+
     innerstate++;
     break;
 
-  default:
     return true;
   }
 
@@ -368,36 +465,43 @@ bool ESP32_SMA_Inverter::getTotalPowerGeneration()
 
 bool ESP32_SMA_Inverter::getInstantDCPower()
 {
-  // 2W - This appears broken...
-#ifndef FETCH_DC_INSTANT_POWER
-  return true;
-#else
-  logD("getInstantDCPower(%i)", innerstate);
-  //DC
-  //We expect a multi packet reply to this question...
+  logD("getInstantACPower(%i)" , innerstate);
+
+  long command = 0x51000200;
+  long first = 0x00464000;
+  long last = 0x004642FF;
+
+  int32_t thisvalue;
+  //Get spot value for instant AC wattage
+  // debugMsg("getInstantACPower stage: ");
+  // debugMsgLn(String(innerstate));
 
   switch (innerstate)
   {
   case 0:
+    //writePacketHeader(pcktBuf, 0x01, addr_unknown);
+    smanet.writePacketHeader(smanet.level1packet, smanet.smaBTInverterAddressArray); 
+   
+    // writePacket(pcktBuf, 0x09, 0xA0, 0, device->SUSyID, device->Serial);
+    smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x09, 0xA0, 0, devSUSyID, devSerial);     
 
-    writePacketHeader(level1packet);
-    //writePacketHeader(level1packet,0x01,0x00,smaBTInverterAddressArray);
-    writeSMANET2PlusPacket(level1packet, 0x09, 0xE0, packet_send_counter, 0, 0, 0);
-    // writeSMANET2ArrayFromProgmem(level1packet, smanet2packetx80x00x02x00, sizeof(smanet2packetx80x00x02x00));
-    writeSMANET2ArrayFromProgmem(level1packet, smanet2packetdcpower, sizeof(smanet2packetdcpower));
-    writeSMANET2PlusPacketTrailer(level1packet);
-    writePacketLength(level1packet);
+    smanet.writeSMANET2Long(smanet.level1packet, command);
+    smanet.writeSMANET2Long(smanet.level1packet, first);
+    smanet.writeSMANET2Long(smanet.level1packet, last);
 
-    sendPacket(level1packet);
+    smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet); //writePacketTrailer(pcktBuf);
+    smanet.writePacketLength(smanet.level1packet); //writePacketLength(pcktBuf);
+
+    smanet.sendPacket(smanet.level1packet);
     innerstate++;
     break;
 
   case 1:
-    if (waitForMultiPacket(0x0001))
+    if (smanet.waitForMultiPacket(0x0001))
     {
-      if (validateChecksum())
+      if (smanet.validateChecksum())
       {
-        packet_send_counter++;
+        smanet.packet_send_counter++;
         innerstate++;
       }
       else
@@ -406,162 +510,83 @@ bool ESP32_SMA_Inverter::getInstantDCPower()
     break;
 
   case 2:
-    //displaySpotValues(28);
-    for (int i = 40 + 1; i < packetposition - 3; i += 28)
+    //value will contain instant/spot AC power generation along with date/time of reading...
+    // memcpy(&datetime, &level1packet[40 + 1 + 4], 4);
+    bool validPcktID = false;
+
+    short pcktcount = LocalUtil::get_short(smanet.level1packet + 25);
+    unsigned short rcvpcktID = LocalUtil::get_short(smanet.level1packet + 27) & 0x7FFF;
+
+    //was it my packet ? 
+    uint16_t aSYSyID = LocalUtil::get_short(smanet.level1packet + 15);
+    uint32_t aSerial = LocalUtil::get_long(smanet.level1packet+17);
+    if (((uint16_t) aSYSyID == devSUSyID) && ((uint32_t)aSerial == devSerial)) 
     {
-      valuetype = level1packet[i + 1] + level1packet[i + 2] * 256;
-      memcpy(&value, &level1packet[i + 8], 4);
+        validPcktID = true;
+        int32_t value = 0;
+        int64_t value64 = 0;
+        uint32_t recordsize = 4 * ((uint32_t)smanet.level1packet[5] - 9) / ((uint32_t)LocalUtil::get_long(smanet.level1packet + 37) - (uint32_t)LocalUtil::get_long(smanet.level1packet + 33) + 1);
+        for (int ii = 41; ii < smanet.packetposition - 3; ii += recordsize) 
+        {
+          uint8_t *recptr = smanet.level1packet + ii;
+          uint32_t code = ((uint32_t)LocalUtil::get_long(recptr));
+          LriDef lri = (LriDef)(code & 0x00FFFF00);
+          uint32_t cls = code & 0xFF;
+          uint8_t dataType = code >> 24;
+          time_t datetime = (time_t)LocalUtil::get_long(recptr + 4);
 
-      //valuetype
-      logD("getInstantDCPower(): valuetype: %li value: %lu ", valuetype, value);
+          if (recordsize == 16)
+          {
+              value64 = LocalUtil::get_longlong(recptr + 8);
+              if (is_NaN(value64) || is_NaN((uint64_t)value64))
+                  value64 = 0;
+          }
+          else if ((dataType != DT_STRING) && (dataType != DT_STATUS))
+          {
+              value = LocalUtil::get_long(recptr + 16);
+              if (is_NaN(value) || is_NaN((uint32_t)value))
+                  value = 0;
+          }
 
-      //0x451f=DC Voltage  /100
-      //0x4521=DC Current  /1000
-      //0x251e=DC Power /1
-      if (valuetype==0x451f) spotvoltdc=(float)value/(float)100.0;
+          logD("received valuetype :%%.%dX ", lri);
 
-      if (valuetype==0x4521) spotampdc=(float)value/(float)1000.0;
+          switch (lri)
+          {
+          case DcMsWatt: ////SPOT_PDC1 / SPOT_PDC2
+              //This function gives us the time when the inverter was switched off
+              thisvalue = value;
+              logI("DC Pwr= %li " , thisvalue);
+              _client.publish(MQTT_BASE_TOPIC "instant_dc", LocalUtil::uint64ToString(thisvalue), true);
+              break;
 
-      if (valuetype == 0x251e) {
-        if (value > MAX_SPOTDC) {
-          spotpowerdc = spotvoltdc * spotampdc; 
-        } else {
-          spotpowerdc = value;
-        }  
-      } 
+          case DcMsVol: //SPOT_UDC1 / SPOT_UDC2
+              //This function gives us the time when the inverter was switched off
+              thisvalue = value;
+              logI("DC V= %li " , thisvalue);
+              _client.publish(MQTT_BASE_TOPIC "instant_vdc", LocalUtil::uint64ToString(thisvalue), true);
+              break;
 
-      memcpy(&datetime, &level1packet[i + 4], 4);
+          case DcMsAmp: //SPOT_IDC1 / SPOT_IDC2
+              //This function gives us the time when the inverter was switched off
+              thisvalue = value;
+              logI("DC A= %li " , thisvalue);
+              _client.publish(MQTT_BASE_TOPIC "instant_adc", LocalUtil::uint64ToString(thisvalue), true);
+              break;
+          default:
+             break;
+          }
+        }
     }
-
-    //spotpowerdc=volts*amps;
-    logI("DC Pwr=%lu Volt=%f Amp=%f " , spotpowerdc, spotvoltdc, spotampdc);
-
-    _client.publish(MQTT_BASE_TOPIC "instant_dc", LocalUtil::uint64ToString(spotpowerdc), true);
-    _client.publish(MQTT_BASE_TOPIC "instant_vdc", LocalUtil::uint64ToString(spotvoltdc), true);
-    _client.publish(MQTT_BASE_TOPIC "instant_adc", LocalUtil::uint64ToString(spotampdc), true);
 
     innerstate++;
     break;
 
-  default:
     return true;
   }
 
   return false;
-#endif
 }
 
-
-
-/*
-//Inverter name
- prog_uchar PROGMEM smanet2packetinvertername[]={   0x80, 0x00, 0x02, 0x00, 0x58, 0x00, 0x1e, 0x82, 0x00, 0xFF, 0x1e, 0x82, 0x00};  
- 
- void getInverterName() {
- 
- do {
- //INVERTERNAME
- debugMsgln("InvName"));
- writePacketHeader(level1packet,sixff);
- //writePacketHeader(level1packet,0x01,0x00,sixff);
- writeSMANET2PlusPacket(level1packet,0x09, 0xa0, packet_send_counter, 0, 0, 0);
- writeSMANET2ArrayFromProgmem(level1packet,smanet2packetinvertername);
- writeSMANET2PlusPacketTrailer(level1packet);
- writePacketLength(level1packet);
- sendPacket(level1packet);
- 
- waitForMultiPacket(0x0001);
- } 
- while (!validateChecksum());
- packet_send_counter++;
- 
- valuetype = level1packet[40+1+1]+level1packet[40+2+1]*256;
- 
- if (valuetype==0x821e) {
- memcpy(invertername,&level1packet[48+1],14);
- Serial.println(invertername);
- memcpy(&datetime,&level1packet[40+4+1],4);  //Returns date/time unit switched PV off for today (or current time if its still on)
- }
- }
- 
- void HistoricData() {
- 
- time_t currenttime=now();
- digitalClockDisplay(currenttime);
- 
- debugMsgln("Historic data...."));
- tmElements_t tm;
- if( year(currenttime) > 99)
- tm.Year = year(currenttime)- 1970;
- else
- tm.Year = year(currenttime)+ 30;  
- 
- tm.Month = month(currenttime);
- tm.Day = day(currenttime);
- tm.Hour = 10;      //Start each day at 5am (might need to change this if you're lucky enough to live somewhere hot and sunny!!
- tm.Minute = 0;
- tm.Second = 0;
- time_t startTime=makeTime(tm);  //Midnight
- 
- 
- //Read historic data for today (SMA inverter saves 5 minute averaged data)
- //We read 30 minutes at a time to save RAM on Arduino
- 
- //for (int hourloop=1;hourloop<24*2;hourloop++)
- while (startTime < now()) 
- {
- //HowMuchMemory();
- 
- time_t endTime=startTime+(25*60);  //25 minutes on
- 
- //digitalClockDisplay(startTime);
- //digitalClockDisplay(endTime);
- //debugMsgln(" ");
- 
- do {
- writePacketHeader(level1packet);
- //writePacketHeader(level1packet,0x01,0x00,smaBTInverterAddressArray);
- writeSMANET2PlusPacket(level1packet,0x09, 0xE0, packet_send_counter, 0, 0, 0);
- 
- writeSMANET2SingleByte(level1packet,0x80);
- writeSMANET2SingleByte(level1packet,0x00);
- writeSMANET2SingleByte(level1packet,0x02);
- writeSMANET2SingleByte(level1packet,0x00);
- writeSMANET2SingleByte(level1packet,0x70);
- // convert from an unsigned long int to a 4-byte array
- writeSMANET2Long(level1packet,startTime);
- writeSMANET2Long(level1packet,endTime);
- writeSMANET2PlusPacketTrailer(level1packet);
- writePacketLength(level1packet);
- sendPacket(level1packet);
- 
- waitForMultiPacket(0x0001);
- }
- while (!validateChecksum());
- //debugMsg("packetlength=");    Serial.println(packetlength);
- 
- packet_send_counter++;
- 
- //Loop through values
- for(int x=40+1;x<(packetposition-3);x+=12){
- memcpy(&value,&level1packet[x+4],4);
- 
- if (value > currentvalue) {
- memcpy(&datetime,&level1packet[x],4);
- digitalClockDisplay(datetime);
- debugMsg("=");
- Serial.println(value);
- currentvalue=value;         
- 
- //uploadValueToSolarStats(currentvalue,datetime);          
- }
- }
- 
- startTime=endTime+(5*60);
- delay(750);  //Slow down the requests to the SMA inverter
- }
- }
- */
 
 //-------------------------------------------------------------------------------------------
 bool ESP32_SMA_Inverter::checkIfNeedToSetInverterTime()
@@ -643,24 +668,50 @@ void ESP32_SMA_Inverter::setInverterTime()
   //01 00 00 00
   //C3 27 7E
 
-  
+
+  time_t hosttime = time(NULL);
+  // Get new host time
+  hosttime = time(NULL);
+
+  time_t invCurrTime = LocalUtil::get_long(smanet.level1packet + 45);
+  time_t invLastTimeSet = LocalUtil::get_long(smanet.level1packet + 49);
+  int tz = LocalUtil::get_long(smanet.level1packet + 57) & 0xFFFFFFFE;
+  int dst = LocalUtil::get_long(smanet.level1packet + 57) & 0x00000001;
+  int magic = LocalUtil::get_long(smanet.level1packet + 61); // What's this?
+
+
+ 
   time_t currenttime = esp32rtc.getEpoch(); // Returns the ESP32 RTC in number of seconds since the epoch (normally 01/01/1970)
   //digitalClockDisplay(currenttime);
-  writePacketHeader(level1packet);
-  writeSMANET2PlusPacket(level1packet, 0x09, 0x00, packet_send_counter, 0, 0, 0);
-  writeSMANET2ArrayFromProgmem(level1packet, smanet2settime, sizeof(smanet2settime));
-  writeSMANET2Long(level1packet, currenttime);
-  writeSMANET2Long(level1packet, currenttime);
-  writeSMANET2Long(level1packet, currenttime);
-  // writeSMANET2Long(level1packet, timeZoneOffset);
-  writeSMANET2uint(level1packet, timeZoneOffset);
-  writeSMANET2uint(level1packet, 0);
-  writeSMANET2Long(level1packet, currenttime); //No idea what this is for...
-  writeSMANET2ArrayFromProgmem(level1packet, smanet2packet0x01000000, sizeof(smanet2packet0x01000000));
-  writeSMANET2PlusPacketTrailer(level1packet);
-  writePacketLength(level1packet);
-  sendPacket(level1packet);
-  packet_send_counter++;
+  smanet.writePacketHeader(smanet.level1packet);
+  smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x10, 0xA0, 0, anySUSyID, anySerial); //smanet.writeSMANET2PlusPacket(smanet.level1packet, 0x09, 0x00, smanet.packet_send_counter, 0, 0, 0);
+
+  smanet.writeSMANET2Long(smanet.level1packet, 0xF000020A);
+  smanet.writeSMANET2Long(smanet.level1packet, 0x00236D00);
+  smanet.writeSMANET2Long(smanet.level1packet, 0x00236D00);
+  smanet.writeSMANET2Long(smanet.level1packet, 0x00236D00);
+
+  smanet.writeSMANET2Long(smanet.level1packet, hosttime);
+  smanet.writeSMANET2Long(smanet.level1packet, hosttime);
+  smanet.writeSMANET2Long(smanet.level1packet, hosttime);
+  smanet.writeSMANET2Long(smanet.level1packet, tz | dst);
+  smanet.writeSMANET2Long(smanet.level1packet, ++magic);
+  smanet.writeSMANET2Long(smanet.level1packet, 1);
+
+  smanet.writeSMANET2PlusPacketTrailer(smanet.level1packet);
+  smanet.writePacketLength(smanet.level1packet);
+  smanet.sendPacket(smanet.level1packet);
+  smanet.packet_send_counter++;
   //debugMsgln(" done");
 }
+
+//passthrough 
+bool ESP32_SMA_Inverter::start() {
+  return smanet.start();
+}
+bool ESP32_SMA_Inverter::isConnected() {
+  return smanet.isConnected();
+}
+
+
 
